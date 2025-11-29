@@ -66,6 +66,10 @@ class Transaction:
     cost_basis: Optional[float] = None
     profit_loss: Optional[float] = None
     tax_amount: Optional[float] = None
+    # SWAP specific fields
+    token_out: Optional[str] = None  # Token received from swap
+    amount_out: Optional[float] = None  # Amount of token received
+    value_out_vnd: Optional[float] = None  # Value of token received in VND
     
     def __post_init__(self):
         """Validate transaction data"""
@@ -92,6 +96,9 @@ class Transaction:
             "cost_basis": self.cost_basis,
             "profit_loss": self.profit_loss,
             "tax_amount": self.tax_amount,
+            "token_out": self.token_out,
+            "amount_out": self.amount_out,
+            "value_out_vnd": self.value_out_vnd,
         }
     
     @classmethod
@@ -113,5 +120,8 @@ class Transaction:
             cost_basis=data.get("cost_basis"),
             profit_loss=data.get("profit_loss"),
             tax_amount=data.get("tax_amount"),
+            token_out=data.get("token_out"),
+            amount_out=float(data["amount_out"]) if data.get("amount_out") else None,
+            value_out_vnd=float(data["value_out_vnd"]) if data.get("value_out_vnd") else None,
         )
 

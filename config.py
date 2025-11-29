@@ -3,6 +3,12 @@ Configuration file for Crypto Tax MVP
 Contains tax rates, API endpoints, and other settings
 """
 
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 # Tax rates according to Vietnam regulations (Nghị quyết 05/2025)
 TAX_RATES = {
     "transfer": 0.001,  # 0.1% for transfer transactions (buy/sell/swap)
@@ -11,12 +17,12 @@ TAX_RATES = {
     "futures_max": 0.35,  # 35% maximum for futures (progressive tax)
 }
 
-# API Keys (should be set via environment variables or .env file)
-# Users will input their own API keys in the app
-ETHERSCAN_API_KEY = ""  # Get from https://etherscan.io/apis
-BSCSCAN_API_KEY = ""  # Get from https://bscscan.com/apis
-POLYGONSCAN_API_KEY = ""  # Get from https://polygonscan.com/apis
-COINGECKO_API_KEY = ""  # Optional, free tier available
+# API Keys (can be set via environment variables or .env file)
+# Users can also input their own API keys in the app
+ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")  # Get from https://etherscan.io/apis
+BSCSCAN_API_KEY = os.getenv("BSCSCAN_API_KEY", "")  # Get from https://bscscan.com/apis
+POLYGONSCAN_API_KEY = os.getenv("POLYGONSCAN_API_KEY", "")  # Get from https://polygonscan.com/apis
+COINGECKO_API_KEY = os.getenv("COINGECKO_API_KEY", "")  # Optional, free tier available
 
 # API Endpoints
 ETHERSCAN_API_URL = "https://api.etherscan.io/api"
@@ -59,4 +65,7 @@ SUPPORTED_EXCHANGES = {
 STORAGE_TYPE = "sqlite"  # or "csv"
 DATABASE_PATH = "transactions.db"
 CSV_PATH = "transactions.csv"
+
+# Exchange rate
+USD_VND_RATE = 25450.0  # Default USD to VND rate (can be updated via API)
 

@@ -8,23 +8,85 @@ from datetime import datetime
 import config
 
 
+# Global variable for USD/VND rate (can be updated via API or manually)
+_usd_vnd_rate: Optional[float] = None
+
+
+def get_current_usd_vnd_rate() -> float:
+    """Get current USD/VND rate from global state or config default"""
+    global _usd_vnd_rate
+    if _usd_vnd_rate is not None:
+        return _usd_vnd_rate
+    return config.USD_VND_RATE
+
+
+def set_usd_vnd_rate(rate: float) -> None:
+    """Set USD/VND rate manually"""
+    global _usd_vnd_rate
+    _usd_vnd_rate = rate
+
+
+def fetch_usd_vnd_rate_from_api() -> Optional[float]:
+    """
+    Fetch USD to VND exchange rate from free API
+    Returns rate if successful, None if failed
+    """
+    try:
+        # Using exchangerate-api.com free tier (no API key needed)
+        url = "https://api.exchangerate-api.com/v4/latest/USD"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        rate = data.get("rates", {}).get("VND")
+        if rate:
+            return float(rate)
+        return None
+    except Exception as e:
+        print(f"Error fetching USD/VND rate: {e}")
+        return None
+
+
+def refresh_usd_vnd_rate() -> tuple[float, bool]:
+    """
+    Refresh USD/VND rate from API
+    Returns (rate, success) tuple
+    """
+    global _usd_vnd_rate
+    rate = fetch_usd_vnd_rate_from_api()
+    if rate:
+        _usd_vnd_rate = rate
+        return (rate, True)
+    else:
+        # Fallback to config default
+        return (config.USD_VND_RATE, False)
+
+
 class PriceService:
     """Service for fetching cryptocurrency prices"""
-    
-    def __init__(self, api_key: Optional[str] = None):
+
+    def __init__(self, api_key: Optional[str] = None, use_db_cache: bool = True):
         self.api_key = api_key or config.COINGECKO_API_KEY
         self.base_url = config.COINGECKO_API_URL
         self._price_cache: Dict[str, Dict] = {}
-    
+        self._use_db_cache = use_db_cache
+        self._db_cache = None
+
+    def _get_db_cache(self):
+        """Lazy load database cache"""
+        if self._db_cache is None and self._use_db_cache:
+            try:
+                from utils.storage import get_price_cache
+                self._db_cache = get_price_cache()
+            except Exception:
+                self._use_db_cache = False
+        return self._db_cache
+
     def get_usd_to_vnd_rate(self) -> float:
         """
         Get USD to VND exchange rate
-        Using CoinGecko or a fixed rate as fallback
+        Uses global rate if set, otherwise config default
         """
-        # For MVP, use a fixed rate or fetch from CoinGecko
-        # CoinGecko doesn't directly support VND, so we'll use a fixed rate
-        # In production, you might want to use a currency API
-        return 25000.0  # Approximate USD to VND rate
+        return get_current_usd_vnd_rate()
     
     def get_crypto_price_usd(self, token_symbol: str, date: Optional[datetime] = None) -> Optional[float]:
         """
@@ -57,9 +119,21 @@ class PriceService:
             coin_id = token_symbol.lower()
         
         cache_key = f"{coin_id}_{date.date() if date else 'latest'}"
+
+        # Check memory cache first
         if cache_key in self._price_cache:
             return self._price_cache[cache_key].get("usd")
-        
+
+        # Check database cache for historical prices
+        if date:
+            db_cache = self._get_db_cache()
+            if db_cache:
+                date_str = date.strftime("%Y-%m-%d")
+                cached = db_cache.get_price(token_symbol, date_str)
+                if cached:
+                    self._price_cache[cache_key] = {"usd": cached["price_usd"]}
+                    return cached["price_usd"]
+
         try:
             if date:
                 # Historical price
@@ -85,6 +159,19 @@ class PriceService:
             
             if price:
                 self._price_cache[cache_key] = {"usd": price}
+
+                # Save historical price to database cache
+                if date:
+                    db_cache = self._get_db_cache()
+                    if db_cache:
+                        vnd_rate = self.get_usd_to_vnd_rate()
+                        db_cache.set_price(
+                            token_symbol,
+                            date.strftime("%Y-%m-%d"),
+                            price,
+                            price * vnd_rate
+                        )
+
                 return price
             else:
                 return None

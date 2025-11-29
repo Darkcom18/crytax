@@ -70,31 +70,84 @@ class BinanceClient:
             print(f"Error fetching Binance trades: {e}")
             return []
     
-    def get_all_trades(self, start_time: Optional[datetime] = None, 
+    def get_all_trades(self, start_time: Optional[datetime] = None,
                        end_time: Optional[datetime] = None) -> List[Dict]:
         """
-        Get all trades from all symbols
-        
-        Note: This is expensive and may hit rate limits
-        For MVP, consider limiting to specific symbols or time ranges
+        Get all trades from all symbols that user has balance or traded
+
+        Note: This iterates through symbols with non-zero balance
         """
         all_trades = []
-        
+
         try:
-            # Get account info to get all trading pairs
+            # Get account info to find assets with balance
             account_info = self.client.get_account()
-            
-            # Get balances to find which symbols user has traded
             balances = account_info.get("balances", [])
-            
-            # For each balance, try to get trades
-            # This is simplified - in production, you'd want to cache and optimize
-            symbols_traded = set()
-            
-            # Get recent trades to determine which symbols were traded
-            # This is a workaround - ideally Binance would provide a list of all traded symbols
-            # For MVP, we'll need user to specify symbols or use a different approach
-            
+
+            # Find assets with non-zero balance (free or locked)
+            assets_with_balance = []
+            for balance in balances:
+                free = float(balance.get("free", 0))
+                locked = float(balance.get("locked", 0))
+                if free > 0 or locked > 0:
+                    assets_with_balance.append(balance.get("asset"))
+
+            # Common quote currencies to try
+            quote_currencies = ["USDT", "BUSD", "BTC", "ETH", "BNB"]
+
+            # Build list of symbols to check
+            symbols_to_check = set()
+            for asset in assets_with_balance:
+                if asset in quote_currencies:
+                    continue  # Skip quote currencies themselves
+                for quote in quote_currencies:
+                    symbols_to_check.add(f"{asset}{quote}")
+
+            # Also add some common pairs for assets that might have zero balance now
+            common_assets = ["BTC", "ETH", "BNB", "SOL", "ADA", "DOT", "AVAX", "MATIC"]
+            for asset in common_assets:
+                for quote in ["USDT", "BUSD"]:
+                    symbols_to_check.add(f"{asset}{quote}")
+
+            # Get exchange info to validate symbols exist
+            exchange_info = self.client.get_exchange_info()
+            valid_symbols = {s["symbol"] for s in exchange_info.get("symbols", [])}
+
+            # Fetch trades for each valid symbol
+            for symbol in symbols_to_check:
+                if symbol not in valid_symbols:
+                    continue
+
+                try:
+                    params = {"symbol": symbol}
+                    if start_time:
+                        params["startTime"] = int(start_time.timestamp() * 1000)
+                    if end_time:
+                        params["endTime"] = int(end_time.timestamp() * 1000)
+
+                    trades = self.client.get_my_trades(**params)
+
+                    for trade in trades:
+                        all_trades.append({
+                            "id": trade.get("id"),
+                            "symbol": trade.get("symbol"),
+                            "price": float(trade.get("price", 0)),
+                            "qty": float(trade.get("qty", 0)),
+                            "quoteQty": float(trade.get("quoteQty", 0)),
+                            "time": trade.get("time"),
+                            "isBuyer": trade.get("isBuyer"),
+                            "commission": float(trade.get("commission", 0)),
+                            "commissionAsset": trade.get("commissionAsset"),
+                        })
+                except BinanceAPIException:
+                    # Symbol might not exist or no trades - skip
+                    continue
+                except Exception:
+                    continue
+
+            # Sort by time
+            all_trades.sort(key=lambda x: x.get("time", 0))
+
             return all_trades
         except Exception as e:
             print(f"Error fetching all Binance trades: {e}")

@@ -35,12 +35,8 @@ class ExchangeService:
             client = create_binance_client(api_key, api_secret)
             transactions = []
             
-            # Fetch trades
-            # Note: get_trades() without symbol requires getting all symbols first
-            # For MVP, we'll need to handle this differently
-            # For now, return empty list and user can upload CSV
-            trades = []  # client.get_trades() - needs symbol parameter
-            # TODO: Implement getting all trades by iterating through symbols
+            # Fetch all trades from all symbols
+            trades = client.get_all_trades(start_date, end_date)
             for trade in trades:
                 tx = self._parse_binance_trade(trade)
                 if tx:

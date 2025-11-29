@@ -142,17 +142,36 @@ class TaxCalculator:
                 }
             
             elif tx.type == TransactionType.SWAP:
-                # Swap: sell token A, buy token B
-                # First, calculate sale of token A
-                # For simplicity, assume we know which token is being sold
-                # In practice, you'd need to parse swap details
-                
-                # For MVP, treat swap as sell + buy
-                # This is simplified - real swaps need more complex logic
-                cost_basis = 0.0  # Would need to determine from swap details
-                profit_loss = 0.0  # Would need to calculate
-                tax_amount = tx.value_vnd * config.TAX_RATES["transfer"]
-                
+                # Swap: sell token (tx.token, tx.amount) -> receive token_out (tx.token_out, tx.amount_out)
+                # Tax is calculated on the value of token sold (tx.value_vnd)
+
+                # Calculate cost basis of token being sold using FIFO
+                cost_basis, remaining = self.fifo.calculate_cost_basis(tx.token, tx.amount)
+
+                if remaining > 0:
+                    # Partial swap - some tokens don't have cost basis
+                    actual_amount = tx.amount - remaining
+                    if tx.amount > 0:
+                        actual_value = (actual_amount / tx.amount) * tx.value_vnd
+                        cost_basis = (actual_amount / tx.amount) * cost_basis
+                    else:
+                        actual_value = tx.value_vnd
+                else:
+                    actual_value = tx.value_vnd
+
+                # Profit/loss = value received - cost basis of sold token
+                # If we have value_out_vnd, use it; otherwise use value_vnd
+                value_received = tx.value_out_vnd if tx.value_out_vnd else tx.value_vnd
+                profit_loss = value_received - cost_basis
+
+                # Tax = 0.1% on the transaction value (value of token sold)
+                tax_amount = actual_value * config.TAX_RATES["transfer"]
+
+                # Add received token to inventory for future FIFO tracking
+                if tx.token_out and tx.amount_out and tx.value_out_vnd:
+                    price_per_token = tx.value_out_vnd / tx.amount_out if tx.amount_out > 0 else 0
+                    self.fifo.add_purchase(tx.token_out, tx.amount_out, price_per_token, tx.date)
+
                 return {
                     "transaction": tx,
                     "cost_basis": cost_basis,
