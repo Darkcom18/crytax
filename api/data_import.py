@@ -3,18 +3,25 @@ Data Import API
 Handles importing transactions from various sources
 """
 
+import time
 from typing import List, Optional, Any, BinaryIO
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 
 from api.base import BaseAPI, APIResponse
 from models.transaction import Transaction
 from utils.exceptions import validate_wallet_address
+from utils.exchange_clients import create_binance_client
+from services.wallet_service import WalletService
+from utils.file_parser import parse_csv
+from utils.file_parser import parse_json
+from services.exchange_service import ExchangeService
 
 
 @dataclass
 class ImportResult:
     """Result of an import operation"""
+
     count: int
     source: str
     format_type: Optional[str] = None
@@ -39,7 +46,7 @@ class DataImportAPI(BaseAPI):
         chain: str,
         api_key: Optional[str] = None,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> APIResponse[ImportResult]:
         """
         Import transactions from blockchain wallet.
@@ -57,31 +64,31 @@ class DataImportAPI(BaseAPI):
             return APIResponse.validation_error([error_msg])
 
         try:
-            from services.wallet_service import WalletService
+
             service = WalletService()
 
             transactions = service.fetch_transactions(
-                wallet_address,
-                chain.lower(),
-                api_key,
-                start_date,
-                end_date
+                wallet_address, chain.lower(), api_key, start_date, end_date
             )
 
             if transactions:
                 # Add to transaction store
                 self.container.transactions.add_many(transactions)
 
-                return APIResponse.ok(ImportResult(
-                    count=len(transactions),
-                    source=f"wallet:{chain}"
-                ), f"Đã import {len(transactions)} giao dịch từ ví")
+                return APIResponse.ok(
+                    ImportResult(count=len(transactions), source=f"wallet:{chain}"),
+                    f"Đã import {len(transactions)} giao dịch từ ví",
+                )
             else:
-                return APIResponse.ok(ImportResult(
-                    count=0,
-                    source=f"wallet:{chain}",
-                    warnings=["Không tìm thấy giao dịch trong khoảng thời gian này"]
-                ))
+                return APIResponse.ok(
+                    ImportResult(
+                        count=0,
+                        source=f"wallet:{chain}",
+                        warnings=[
+                            "Không tìm thấy giao dịch trong khoảng thời gian này"
+                        ],
+                    )
+                )
 
         except Exception as e:
             return APIResponse.error(f"Lỗi khi lấy giao dịch từ ví: {str(e)}")
@@ -93,7 +100,7 @@ class DataImportAPI(BaseAPI):
         api_key: str,
         api_secret: str,
         start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None
+        end_date: Optional[datetime] = None,
     ) -> APIResponse[ImportResult]:
         """
         Import transactions from Binance exchange.
@@ -105,42 +112,37 @@ class DataImportAPI(BaseAPI):
             end_date: Optional end date filter
         """
         if not api_key or not api_secret:
-            return APIResponse.validation_error([
-                "Vui lòng nhập API Key và Secret"
-            ])
+            return APIResponse.validation_error(["Vui lòng nhập API Key và Secret"])
 
         try:
-            from services.exchange_service import ExchangeService
+
             service = ExchangeService()
 
             transactions = service.fetch_binance_transactions(
-                api_key,
-                api_secret,
-                start_date,
-                end_date
+                api_key, api_secret, start_date, end_date
             )
 
             if transactions:
                 self.container.transactions.add_many(transactions)
 
-                return APIResponse.ok(ImportResult(
-                    count=len(transactions),
-                    source="exchange:binance"
-                ), f"Đã import {len(transactions)} giao dịch từ Binance")
+                return APIResponse.ok(
+                    ImportResult(count=len(transactions), source="exchange:binance"),
+                    f"Đã import {len(transactions)} giao dịch từ Binance",
+                )
             else:
-                return APIResponse.ok(ImportResult(
-                    count=0,
-                    source="exchange:binance",
-                    warnings=["Không tìm thấy giao dịch"]
-                ))
+                return APIResponse.ok(
+                    ImportResult(
+                        count=0,
+                        source="exchange:binance",
+                        warnings=["Không tìm thấy giao dịch"],
+                    )
+                )
 
         except Exception as e:
             return APIResponse.error(f"Lỗi khi lấy giao dịch từ Binance: {str(e)}")
 
     def test_binance_connection(
-        self,
-        api_key: str,
-        api_secret: str
+        self, api_key: str, api_secret: str
     ) -> APIResponse[dict]:
         """
         Test Binance API connection.
@@ -148,20 +150,38 @@ class DataImportAPI(BaseAPI):
         Returns account info if successful.
         """
         if not api_key or not api_secret:
-            return APIResponse.validation_error([
-                "Vui lòng nhập API Key và Secret"
-            ])
+            return APIResponse.validation_error(["Vui lòng nhập API Key và Secret"])
 
         try:
-            from utils.exchange_clients import create_binance_client
-            client = create_binance_client(api_key, api_secret)
-            account = client.client.get_account()
 
-            return APIResponse.ok({
-                "account_type": account.get("accountType", "N/A"),
-                "can_trade": account.get("canTrade", False),
-                "can_withdraw": account.get("canWithdraw", False),
-            }, "Kết nối thành công")
+            client = create_binance_client(api_key, api_secret)
+
+            server = client.client.get_server_time()
+            server_time_ms = server["serverTime"]
+
+            # Get client current timestamp by UTC
+            local_now = datetime.now()
+            utc_now = local_now.astimezone(timezone.utc)
+            utc_timestamp_ms = int(utc_now.timestamp() * 1000)
+
+            # Offset between server and client ms
+            client.client.timestamp_offset = server_time_ms - utc_timestamp_ms
+
+            account = client.client.get_account(recvWindow=10000)
+
+            return APIResponse.ok(
+                {
+                    "account_type": account.get("accountType", "N/A"),
+                    "can_trade": account.get("canTrade", False),
+                    "can_withdraw": account.get("canWithdraw", False),
+                    "server_time_utc": datetime.fromtimestamp(
+                        server_time_ms / 1000, tz=timezone.utc
+                    ).isoformat(),
+                    "local_time_utc": utc_now.isoformat(),
+                    "timestamp_offset_ms": client.client.timestamp_offset,
+                },
+                "Kết nối thành công",
+            )
 
         except Exception as e:
             return APIResponse.error(f"Lỗi kết nối: {str(e)}")
@@ -169,9 +189,7 @@ class DataImportAPI(BaseAPI):
     # File imports
 
     def import_from_csv(
-        self,
-        file_content: Any,
-        filename: str = ""
+        self, file_content: Any, filename: str = ""
     ) -> APIResponse[ImportResult]:
         """
         Import transactions from CSV file.
@@ -181,33 +199,36 @@ class DataImportAPI(BaseAPI):
             filename: Optional filename for format detection
         """
         try:
-            from utils.file_parser import parse_csv
 
             transactions, format_type = parse_csv(file_content, filename)
 
             if transactions:
                 self.container.transactions.add_many(transactions)
 
-                return APIResponse.ok(ImportResult(
-                    count=len(transactions),
-                    source="file:csv",
-                    format_type=format_type
-                ), f"Đã import {len(transactions)} giao dịch từ CSV")
+                return APIResponse.ok(
+                    ImportResult(
+                        count=len(transactions),
+                        source="file:csv",
+                        format_type=format_type,
+                    ),
+                    f"Đã import {len(transactions)} giao dịch từ CSV",
+                )
             else:
-                return APIResponse.ok(ImportResult(
-                    count=0,
-                    source="file:csv",
-                    format_type=format_type,
-                    warnings=[f"Không tìm thấy giao dịch hợp lệ. Format: {format_type}"]
-                ))
+                return APIResponse.ok(
+                    ImportResult(
+                        count=0,
+                        source="file:csv",
+                        format_type=format_type,
+                        warnings=[
+                            f"Không tìm thấy giao dịch hợp lệ. Format: {format_type}"
+                        ],
+                    )
+                )
 
         except Exception as e:
             return APIResponse.error(f"Lỗi đọc file CSV: {str(e)}")
 
-    def import_from_json(
-        self,
-        file_content: Any
-    ) -> APIResponse[ImportResult]:
+    def import_from_json(self, file_content: Any) -> APIResponse[ImportResult]:
         """
         Import transactions from JSON file.
 
@@ -215,23 +236,26 @@ class DataImportAPI(BaseAPI):
             file_content: File content (file object or string)
         """
         try:
-            from utils.file_parser import parse_json
 
             transactions, format_type = parse_json(file_content)
 
             if transactions:
                 self.container.transactions.add_many(transactions)
 
-                return APIResponse.ok(ImportResult(
-                    count=len(transactions),
-                    source="file:json"
-                ), f"Đã import {len(transactions)} giao dịch từ JSON")
+                return APIResponse.ok(
+                    ImportResult(count=len(transactions), source="file:json"),
+                    f"Đã import {len(transactions)} giao dịch từ JSON",
+                )
             else:
-                return APIResponse.ok(ImportResult(
-                    count=0,
-                    source="file:json",
-                    warnings=[f"Không tìm thấy giao dịch hợp lệ. Error: {format_type}"]
-                ))
+                return APIResponse.ok(
+                    ImportResult(
+                        count=0,
+                        source="file:json",
+                        warnings=[
+                            f"Không tìm thấy giao dịch hợp lệ. Error: {format_type}"
+                        ],
+                    )
+                )
 
         except Exception as e:
             return APIResponse.error(f"Lỗi đọc file JSON: {str(e)}")
@@ -249,9 +273,11 @@ class DataImportAPI(BaseAPI):
     def get_sample_csv_format(self) -> str:
         """Get sample CSV format"""
         from utils.file_parser import get_sample_csv_format
+
         return get_sample_csv_format()
 
     def get_sample_json_format(self) -> str:
         """Get sample JSON format"""
         from utils.file_parser import get_sample_json_format
+
         return get_sample_json_format()
