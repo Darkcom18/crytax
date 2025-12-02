@@ -223,21 +223,28 @@ def render_wallet_import():
 
     col1, col2 = st.columns(2)
     with col1:
-        chains = api.data_import.get_supported_chains()
-        chain = st.selectbox("Chọn blockchain:", chains)
+        # Get supported chains and create mapping for selectbox
+        chains_data = api.data_import.get_supported_chains()
+        chain_names = [c["name"] for c in chains_data]
+        chain_key_map = {c["name"]: c["key"] for c in chains_data}
+
+        selected_chain_name = st.selectbox("Chọn blockchain:", chain_names)
         wallet_address = st.text_input("Địa chỉ ví:", placeholder="0x...")
 
     with col2:
         wallet_api_key = st.text_input(
             "API Key (tùy chọn):",
             type="password",
-            help="API key từ Etherscan, BSCScan, etc.",
+            help="API key từ Etherscan (dùng chung cho tất cả chains với V2 API)",
         )
         date_range = st.date_input(
             "Khoảng thời gian:", value=(date(2024, 1, 1), date.today())
         )
 
     if st.button("🔍 Lấy giao dịch từ ví", type="primary"):
+        # Get chain key from selected name
+        chain_key = chain_key_map.get(selected_chain_name, "")
+
         start_date = (
             datetime.combine(date_range[0], datetime.min.time())
             if len(date_range) > 0
@@ -252,7 +259,7 @@ def render_wallet_import():
         with st.spinner("Đang lấy giao dịch..."):
             result = api.data_import.import_from_wallet(
                 wallet_address,
-                chain,
+                chain_key,
                 wallet_api_key if wallet_api_key else None,
                 start_date,
                 end_date,

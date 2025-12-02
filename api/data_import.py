@@ -262,9 +262,28 @@ class DataImportAPI(BaseAPI):
 
     # Utilities
 
-    def get_supported_chains(self) -> List[str]:
-        """Get list of supported blockchain chains"""
-        return ["Ethereum", "BSC", "Polygon"]
+    def get_supported_chains(self) -> List[dict]:
+        """
+        Get list of supported blockchain chains with chain IDs
+
+        Returns:
+            List of dicts with chain info: name, chain_id, native_token, free_tier
+        """
+        from utils.api_clients import get_supported_chains
+
+        chains = get_supported_chains()
+        result = []
+        for key, info in chains.items():
+            result.append(
+                {
+                    "key": key,
+                    "chain_id": info["chain_id"],
+                    "name": info["name"],
+                    "native_token": info["native_token"],
+                    "free_tier": info["free_tier"],
+                }
+            )
+        return sorted(result, key=lambda x: x["name"])
 
     def get_supported_exchanges(self) -> List[str]:
         """Get list of supported exchanges"""

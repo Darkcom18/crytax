@@ -2,44 +2,54 @@
 Custom exceptions for Crypto Tax MVP
 """
 
+from utils.api_clients import get_chain_info
+
 
 class CryptoTaxError(Exception):
     """Base exception for Crypto Tax MVP"""
+
     pass
 
 
 class InvalidWalletAddressError(CryptoTaxError):
     """Invalid wallet address format"""
+
     pass
 
 
 class APIError(CryptoTaxError):
     """API call failed"""
+
     pass
 
 
 class ExchangeAPIError(APIError):
     """Exchange API error"""
+
     pass
 
 
 class BlockchainAPIError(APIError):
     """Blockchain explorer API error"""
+
     pass
 
 
 class PriceServiceError(APIError):
     """Price service error"""
+
     pass
 
 
 class ParseError(CryptoTaxError):
     """Error parsing data"""
+
     pass
 
 
 class StorageError(CryptoTaxError):
     """Storage operation error"""
+
     pass
 
 
@@ -78,26 +88,58 @@ def validate_wallet_address(address: str, chain: str) -> tuple[bool, str]:
 
     Args:
         address: Wallet address
-        chain: Blockchain name
+        chain: Blockchain name or chain_id
 
     Returns:
         (is_valid, error_message)
     """
-    chain_lower = chain.lower()
 
-    if chain_lower in ["ethereum", "bsc", "polygon"]:
-        if not address:
-            return False, "Vui lòng nhập địa chỉ ví"
-        if not validate_evm_address(address):
-            return False, "Địa chỉ ví không hợp lệ. Địa chỉ EVM phải bắt đầu bằng 0x và có 42 ký tự"
-        return True, ""
+    chain_lower = chain.lower().strip()
 
-    elif chain_lower == "solana":
+    # Handle Solana separately (non-EVM)
+    if chain_lower == "solana":
         # Solana addresses are base58 encoded, 32-44 characters
         if not address:
             return False, "Vui lòng nhập địa chỉ ví"
         if len(address) < 32 or len(address) > 44:
             return False, "Địa chỉ Solana không hợp lệ"
+        return True, ""
+
+    # Check if chain is supported via Etherscan V2
+    chain_info = get_chain_info(chain)
+
+    if chain_info:
+        # All Etherscan V2 supported chains use EVM addresses
+        if not address:
+            return False, "Vui lòng nhập địa chỉ ví"
+        if not validate_evm_address(address):
+            return (
+                False,
+                "Địa chỉ ví không hợp lệ. Địa chỉ EVM phải bắt đầu bằng 0x và có 42 ký tự",
+            )
+        return True, ""
+
+    # Legacy support for known EVM chains
+    evm_chains = [
+        "ethereum",
+        "bsc",
+        "polygon",
+        "arbitrum",
+        "optimism",
+        "base",
+        "avalanche",
+        "linea",
+        "scroll",
+        "zksync",
+    ]
+    if chain_lower in evm_chains:
+        if not address:
+            return False, "Vui lòng nhập địa chỉ ví"
+        if not validate_evm_address(address):
+            return (
+                False,
+                "Địa chỉ ví không hợp lệ. Địa chỉ EVM phải bắt đầu bằng 0x và có 42 ký tự",
+            )
         return True, ""
 
     return False, f"Chain không được hỗ trợ: {chain}"
