@@ -87,6 +87,9 @@ class WalletService:
             print(f"Error fetching wallet transactions: {e}")
             return []
 
+    def _contains_any(name: str, keywords) -> bool:
+        return any(k in name for k in keywords)
+
     def _parse_normal_transaction(
         self, tx: dict, wallet_address: str, chain: str, native_token: str
     ) -> Optional[Transaction]:
@@ -97,14 +100,64 @@ class WalletService:
             to_address = tx.get("to", "").lower()
             wallet_lower = wallet_address.lower()
 
-            if from_address == wallet_lower:
-                tx_type = TransactionType.TRANSFER_OUT
-                amount = float(tx.get("value", 0)) / 1e18  # Convert from wei
-            elif to_address == wallet_lower:
-                tx_type = TransactionType.TRANSFER_IN
-                amount = float(tx.get("value", 0)) / 1e18
+            # Extra info for classification
+            input_data = (tx.get("input") or "").lower()
+            method_id = (tx.get("methodId") or "").lower()
+            function_name = (tx.get("functionName") or "").lower()
+            value_raw = float(tx.get("value", 0))
+
+            # Default amount (native token, from wei)
+            amount = value_raw / 1e18 if value_raw else 0.0
+
+            # Normalize for matching
+            fn = function_name
+
+            # Helpers
+
+            # Classify by functionName / input / methodId
+            if fn == "approve":
+                # pure approval, no value moved → treat as DEPOSIT‑like admin op
+                tx_type = TransactionType.DEPOSIT
+            elif fn in [
+                "swapexacttokensfortokens",
+                "swapexactethfortokens",
+                "swapexacttokensforeth",
+            ]:
+                tx_type = TransactionType.SWAP
+            elif self._contains_any(
+                fn,
+                [
+                    "deposit",  # e.g. depositETH(...)
+                    "stake",
+                    "enterstaking",
+                    "farm",
+                    "staking",
+                    "addliquidity",
+                ],
+            ):
+                # Any function name that indicates staking / farming / lending deposit
+                tx_type = TransactionType.FARMING
+            elif (
+                value_raw > 0
+                and (input_data == "0x" or input_data == "")
+                and (method_id == "0x" or method_id == "")
+                and fn == ""
+            ):
+                # Native transfer (simple coin transfer)
+                if from_address == wallet_lower:
+                    tx_type = TransactionType.TRANSFER_OUT
+                elif to_address == wallet_lower:
+                    tx_type = TransactionType.TRANSFER_IN
+                else:
+                    return None
             else:
-                return None
+                # General transfer: still classify direction by from/to
+                if from_address == wallet_lower:
+                    tx_type = TransactionType.TRANSFER_OUT
+                elif to_address == wallet_lower:
+                    tx_type = TransactionType.TRANSFER_IN
+                else:
+                    return None
 
             # Use native token from chain info
             token = native_token
