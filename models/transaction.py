@@ -11,12 +11,13 @@ from enum import Enum
 
 class TransactionType(Enum):
     """Transaction types"""
+
     BUY = "buy"
     SELL = "sell"
     SWAP = "swap"
-    TRANSFER_IN = "transfer_in"
-    TRANSFER_OUT = "transfer_out"
-    STAKING_REWARD = "staking_reward"
+    TRANSFER_IN = "transfer in"
+    TRANSFER_OUT = "transfer out"
+    STAKING_REWARD = "staking reward"
     AIRDROP = "airdrop"
     FARMING = "farming"
     DEPOSIT = "deposit"
@@ -25,6 +26,7 @@ class TransactionType(Enum):
 
 class TransactionSource(Enum):
     """Transaction source"""
+
     WALLET = "wallet"
     EXCHANGE = "exchange"
 
@@ -33,7 +35,7 @@ class TransactionSource(Enum):
 class Transaction:
     """
     Transaction data model
-    
+
     Attributes:
         date: Transaction date and time
         type: Transaction type (buy, sell, swap, etc.)
@@ -51,6 +53,7 @@ class Transaction:
         profit_loss: Profit/loss in VND (optional)
         tax_amount: Tax amount in VND (optional)
     """
+
     date: datetime
     type: TransactionType
     token: str
@@ -70,14 +73,14 @@ class Transaction:
     token_out: Optional[str] = None  # Token received from swap
     amount_out: Optional[float] = None  # Amount of token received
     value_out_vnd: Optional[float] = None  # Value of token received in VND
-    
+
     def __post_init__(self):
         """Validate transaction data"""
         if self.source == TransactionSource.WALLET and not self.wallet_address:
             raise ValueError("wallet_address is required for wallet transactions")
         if self.source == TransactionSource.EXCHANGE and not self.exchange_name:
             raise ValueError("exchange_name is required for exchange transactions")
-    
+
     def to_dict(self):
         """Convert transaction to dictionary"""
         return {
@@ -100,7 +103,7 @@ class Transaction:
             "amount_out": self.amount_out,
             "value_out_vnd": self.value_out_vnd,
         }
-    
+
     @classmethod
     def from_dict(cls, data: dict):
         """Create transaction from dictionary"""
@@ -122,6 +125,7 @@ class Transaction:
             tax_amount=data.get("tax_amount"),
             token_out=data.get("token_out"),
             amount_out=float(data["amount_out"]) if data.get("amount_out") else None,
-            value_out_vnd=float(data["value_out_vnd"]) if data.get("value_out_vnd") else None,
+            value_out_vnd=(
+                float(data["value_out_vnd"]) if data.get("value_out_vnd") else None
+            ),
         )
-

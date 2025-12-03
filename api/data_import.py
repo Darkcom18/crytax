@@ -86,7 +86,9 @@ class DataImportAPI(BaseAPI):
 
             if transactions:
                 # Add to transaction store
+
                 self.container.transactions.add_many(transactions)
+                # self.container.transactions.save(transactions)
 
                 return APIResponse.ok(
                     ImportResult(
@@ -141,6 +143,7 @@ class DataImportAPI(BaseAPI):
 
             if transactions:
                 self.container.transactions.add_many(transactions)
+                self.container.transactions.save
 
                 return APIResponse.ok(
                     ImportResult(count=len(transactions), source="exchange:binance"),
