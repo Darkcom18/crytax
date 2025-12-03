@@ -40,6 +40,9 @@ COINGECKO_API_URL = "https://api.coingecko.com/api/v3"
 # Solana RPC (public endpoints, can be replaced with private RPC)
 SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
 
+BASE_URL_EXCHANGE_RATE_API = "https://api.exchangerate-api.com/v4/latest/USD"
+
+BASE_URL_CURRENCY_CRYPTO_BINANCE = "https://api.binance.com/api/v3/ticker/price"
 # Transaction types
 TRANSACTION_TYPES = {
     "buy": "Mua",
