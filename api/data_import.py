@@ -26,10 +26,13 @@ class ImportResult:
     source: str
     format_type: Optional[str] = None
     warnings: List[str] = None
+    transactions: List[Transaction] = None
 
     def __post_init__(self):
         if self.warnings is None:
             self.warnings = []
+        if self.transactions is None:
+            self.transactions = []
 
 
 class DataImportAPI(BaseAPI):
@@ -47,6 +50,8 @@ class DataImportAPI(BaseAPI):
         api_key: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        page: int = 1,
+        offset: int = 20,
     ) -> APIResponse[ImportResult]:
         """
         Import transactions from blockchain wallet.
@@ -57,6 +62,8 @@ class DataImportAPI(BaseAPI):
             api_key: Optional API key for blockchain explorer
             start_date: Optional start date filter
             end_date: Optional end date filter
+            page: Page number for pagination (1-indexed)
+            offset: Number of transactions per page (default 20)
         """
         # Validate address
         is_valid, error_msg = validate_wallet_address(wallet_address, chain)
@@ -68,7 +75,13 @@ class DataImportAPI(BaseAPI):
             service = WalletService()
 
             transactions = service.fetch_transactions(
-                wallet_address, chain.lower(), api_key, start_date, end_date
+                wallet_address,
+                chain.lower(),
+                api_key,
+                start_date,
+                end_date,
+                page,
+                offset,
             )
 
             if transactions:
@@ -76,7 +89,11 @@ class DataImportAPI(BaseAPI):
                 self.container.transactions.add_many(transactions)
 
                 return APIResponse.ok(
-                    ImportResult(count=len(transactions), source=f"wallet:{chain}"),
+                    ImportResult(
+                        count=len(transactions),
+                        transactions=transactions,
+                        source=f"wallet:{chain}",
+                    ),
                     f"Đã import {len(transactions)} giao dịch từ ví",
                 )
             else:

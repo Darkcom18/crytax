@@ -96,18 +96,18 @@ SUPPORTED_CHAINS = {
     #     "free_tier": False,
     # },
     # Base
-    "base": {
-        "chain_id": 8453,
-        "name": "Base Mainnet",
-        "native_token": "ETH",
-        "free_tier": False,
-    },
-    "base_sepolia": {
-        "chain_id": 84532,
-        "name": "Base Sepolia Testnet",
-        "native_token": "ETH",
-        "free_tier": False,
-    },
+    # "base": {
+    #     "chain_id": 8453,
+    #     "name": "Base Mainnet",
+    #     "native_token": "ETH",
+    #     "free_tier": False,
+    # },
+    # "base_sepolia": {
+    #     "chain_id": 84532,
+    #     "name": "Base Sepolia Testnet",
+    #     "native_token": "ETH",
+    #     "free_tier": False,
+    # },
     # Berachain
     # "berachain_bepolia": {
     #     "chain_id": 80069,
@@ -154,12 +154,12 @@ SUPPORTED_CHAINS = {
         "native_token": "BNB",
         "free_tier": False,
     },
-    "bsc_testnet": {
-        "chain_id": 97,
-        "name": "BNB Smart Chain Testnet",
-        "native_token": "BNB",
-        "free_tier": False,
-    },
+    # "bsc_testnet": {
+    #     "chain_id": 97,
+    #     "name": "BNB Smart Chain Testnet",
+    #     "native_token": "BNB",
+    #     "free_tier": False,
+    # },
     # Celo
     # "celo": {
     #     "chain_id": 42220,
@@ -545,7 +545,12 @@ class EtherscanV2Client:
             return {"status": "0", "message": "ERROR", "result": str(e)}
 
     def get_transactions(
-        self, address: str, start_block: int = 0, end_block: int = 99999999
+        self,
+        address: str,
+        start_block: int = 0,
+        end_block: int = 99999999,
+        page: int = 1,
+        offset: int = 20,
     ) -> List[Dict]:
         """
         Get normal transactions for an address
@@ -554,6 +559,8 @@ class EtherscanV2Client:
             address: Wallet address
             start_block: Start block number
             end_block: End block number
+            page: Page number for pagination (1-indexed)
+            offset: Number of transactions per page (max 10000)
 
         Returns:
             List of transaction dictionaries
@@ -564,7 +571,9 @@ class EtherscanV2Client:
             "address": address,
             "startblock": start_block,
             "endblock": end_block,
-            "sort": "asc",
+            "page": page,
+            "offset": offset,
+            "sort": "desc",
         }
 
         data = self._make_request(params)
@@ -577,7 +586,11 @@ class EtherscanV2Client:
             return []
 
     def get_token_transfers(
-        self, address: str, contract_address: Optional[str] = None
+        self,
+        address: str,
+        contract_address: Optional[str] = None,
+        page: int = 1,
+        offset: int = 20,
     ) -> List[Dict]:
         """
         Get ERC-20/BEP-20 token transfers for an address
@@ -585,6 +598,8 @@ class EtherscanV2Client:
         Args:
             address: Wallet address
             contract_address: Optional token contract address to filter
+            page: Page number for pagination (1-indexed)
+            offset: Number of transactions per page (max 10000)
 
         Returns:
             List of token transfer dictionaries
@@ -593,7 +608,9 @@ class EtherscanV2Client:
             "module": "account",
             "action": "tokentx",
             "address": address,
-            "sort": "asc",
+            "page": page,
+            "offset": offset,
+            "sort": "desc",
         }
 
         if contract_address:
@@ -609,7 +626,12 @@ class EtherscanV2Client:
             return []
 
     def get_internal_transactions(
-        self, address: str, start_block: int = 0, end_block: int = 99999999
+        self,
+        address: str,
+        start_block: int = 0,
+        end_block: int = 99999999,
+        page: int = 1,
+        offset: int = 20,
     ) -> List[Dict]:
         """
         Get internal transactions for an address
@@ -618,6 +640,8 @@ class EtherscanV2Client:
             address: Wallet address
             start_block: Start block number
             end_block: End block number
+            page: Page number for pagination (1-indexed)
+            offset: Number of transactions per page (max 10000)
 
         Returns:
             List of internal transaction dictionaries
@@ -628,6 +652,8 @@ class EtherscanV2Client:
             "address": address,
             "startblock": start_block,
             "endblock": end_block,
+            "page": page,
+            "offset": offset,
             "sort": "asc",
         }
 

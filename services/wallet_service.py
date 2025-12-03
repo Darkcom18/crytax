@@ -5,6 +5,7 @@ Supports 60+ chains via Etherscan API V2
 
 from typing import List, Optional
 from datetime import datetime
+import config
 from models.transaction import Transaction, TransactionType, TransactionSource
 from utils.api_clients import get_client_for_chain, EtherscanV2Client, get_chain_info
 from utils.price_service import get_price_service
@@ -23,6 +24,8 @@ class WalletService:
         api_key: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
+        page: int = config.DEFAULT_PAGE_REQUEST_TRANSACTION,
+        offset: int = config.DEFAULT_LIMIT_REQUEST_TRANSACTION,
     ) -> List[Transaction]:
         """
         Fetch transactions for a wallet address
@@ -33,6 +36,8 @@ class WalletService:
             api_key: Optional API key for Etherscan V2 (single key works for all chains)
             start_date: Optional start date
             end_date: Optional end date
+            page: Page number for pagination (1-indexed)
+            offset: Number of transactions per page (default 20)
 
         Returns:
             List of Transaction objects
@@ -49,7 +54,9 @@ class WalletService:
 
             # Get transactions using Etherscan V2 API
             if isinstance(client, EtherscanV2Client):
-                normal_txs = client.get_transactions(wallet_address)
+                normal_txs = client.get_transactions(
+                    wallet_address, page=page, offset=offset
+                )
                 for tx in normal_txs:
                     parsed = self._parse_normal_transaction(
                         tx, wallet_address, chain, native_token
@@ -58,13 +65,14 @@ class WalletService:
                         transactions.append(parsed)
 
                 # Get token transfers
-                token_txs = client.get_token_transfers(wallet_address)
+                token_txs = client.get_token_transfers(
+                    wallet_address, page=page, offset=offset
+                )
                 for tx in token_txs:
                     parsed = self._parse_token_transfer(tx, wallet_address, chain)
                     if parsed:
                         transactions.append(parsed)
 
-            # Filter by date if provided
             if start_date or end_date:
                 transactions = [
                     tx

@@ -85,3 +85,7 @@ CSV_PATH = "transactions.csv"
 
 # Exchange rate
 USD_VND_RATE = 25450.0  # Default USD to VND rate (can be updated via API)
+
+
+DEFAULT_LIMIT_REQUEST_TRANSACTION = 20
+DEFAULT_PAGE_REQUEST_TRANSACTION = 1

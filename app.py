@@ -8,10 +8,11 @@ import pandas as pd
 from datetime import datetime, date
 import json
 
-# API Layer
+
 from api import get_container
 
-# Formatters
+
+import config
 from utils.formatters import format_vnd
 
 # Page configuration
@@ -221,6 +222,14 @@ def render_wallet_import():
     """Render wallet import section"""
     st.subheader("Kết nối ví")
 
+    # Initialize session state for pagination
+    if "wallet_page" not in st.session_state:
+        st.session_state.wallet_page = 1
+    if "wallet_transactions" not in st.session_state:
+        st.session_state.wallet_transactions = []
+    if "wallet_last_search" not in st.session_state:
+        st.session_state.wallet_last_search = {}
+
     col1, col2 = st.columns(2)
     with col1:
         # Get supported chains and create mapping for selectbox
@@ -241,21 +250,22 @@ def render_wallet_import():
             "Khoảng thời gian:", value=(date(2024, 1, 1), date.today())
         )
 
-    if st.button("🔍 Lấy giao dịch từ ví", type="primary"):
-        # Get chain key from selected name
-        chain_key = chain_key_map.get(selected_chain_name, "")
+    # Get chain key from selected name
+    chain_key = chain_key_map.get(selected_chain_name, "")
 
-        start_date = (
-            datetime.combine(date_range[0], datetime.min.time())
-            if len(date_range) > 0
-            else None
-        )
-        end_date = (
-            datetime.combine(date_range[1], datetime.max.time())
-            if len(date_range) > 1
-            else None
-        )
+    start_date = (
+        datetime.combine(date_range[0], datetime.min.time())
+        if len(date_range) > 0
+        else None
+    )
+    end_date = (
+        datetime.combine(date_range[1], datetime.max.time())
+        if len(date_range) > 1
+        else None
+    )
 
+    # Function to fetch transactions for a specific page
+    def fetch_wallet_transactions(page: int):
         with st.spinner("Đang lấy giao dịch..."):
             result = api.data_import.import_from_wallet(
                 wallet_address,
@@ -263,19 +273,133 @@ def render_wallet_import():
                 wallet_api_key if wallet_api_key else None,
                 start_date,
                 end_date,
+                page=page,
+                offset=config.DEFAULT_LIMIT_REQUEST_TRANSACTION,
+            )
+            return result
+
+    # Search button
+    if st.button("🔍 Lấy giao dịch từ ví", type="primary"):
+        st.session_state.wallet_page = 1  # Reset to page 1
+        st.session_state.wallet_last_search = {
+            "wallet_address": wallet_address,
+            "chain_key": chain_key,
+            "api_key": wallet_api_key,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        result = fetch_wallet_transactions(1)
+
+        if result.success:
+            if result.data.count > 0:
+                st.success(result.message)
+                st.session_state.wallet_transactions = result.data.transactions
+            else:
+                st.warning(
+                    result.data.warnings[0]
+                    if result.data.warnings
+                    else "Không tìm thấy giao dịch"
+                )
+                st.session_state.wallet_transactions = []
+        else:
+            st.error(result.message)
+            st.session_state.wallet_transactions = []
+
+    # Display transactions if available
+    if st.session_state.wallet_transactions:
+        st.markdown("---")
+        st.subheader(f"📋 Kết quả giao dịch (Trang {st.session_state.wallet_page})")
+
+        # Create DataFrame for display
+        df = pd.DataFrame([tx.to_dict() for tx in st.session_state.wallet_transactions])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date", ascending=False)
+
+        display_df = df[
+            [
+                "date",
+                "type",
+                "token",
+                "amount",
+                "value_vnd",
+                "source",
+                "chain",
+                "tx_hash",
+            ]
+        ].copy()
+        display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y %H:%M")
+        display_df["value_vnd"] = display_df["value_vnd"].apply(lambda x: format_vnd(x))
+        display_df["amount"] = display_df["amount"].apply(lambda x: f"{x:,.6f}")
+
+        display_df.columns = [
+            "Ngày",
+            "Loại",
+            "Token",
+            "Số lượng",
+            "Giá trị (VND)",
+            "Nguồn",
+            "Chain",
+            "TX Hash",
+        ]
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        # Pagination controls
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+
+        with col1:
+            if st.button("Trang trước", disabled=st.session_state.wallet_page <= 1):
+                st.session_state.wallet_page -= 1
+                search = st.session_state.wallet_last_search
+                result = api.data_import.import_from_wallet(
+                    search["wallet_address"],
+                    search["chain_key"],
+                    search["api_key"] if search["api_key"] else None,
+                    search["start_date"],
+                    search["end_date"],
+                    page=st.session_state.wallet_page,
+                    offset=config.DEFAULT_PAGE_REQUEST_TRANSACTION,
+                )
+                if result.success and result.data.count > 0:
+                    st.session_state.wallet_transactions = result.data.transactions
+                st.rerun()
+
+        with col2:
+            if st.button(
+                "Trang sau",
+                disabled=len(st.session_state.wallet_transactions)
+                < config.DEFAULT_LIMIT_REQUEST_TRANSACTION,
+            ):
+                st.session_state.wallet_page += 1
+                search = st.session_state.wallet_last_search
+                result = api.data_import.import_from_wallet(
+                    search["wallet_address"],
+                    search["chain_key"],
+                    search["api_key"] if search["api_key"] else None,
+                    search["start_date"],
+                    search["end_date"],
+                    page=st.session_state.wallet_page,
+                    offset=config.DEFAULT_PAGE_REQUEST_TRANSACTION,
+                )
+                if result.success and result.data.count > 0:
+                    st.session_state.wallet_transactions = result.data.transactions
+                else:
+                    st.session_state.wallet_page -= 1  # Revert if no more data
+                    st.warning("Không còn giao dịch nào")
+                st.rerun()
+
+        with col3:
+            st.write(
+                f"**Trang: {st.session_state.wallet_page}** | Hiển thị: {len(st.session_state.wallet_transactions)} giao dịch"
             )
 
-            if result.success:
-                if result.data.count > 0:
-                    st.success(result.message)
-                else:
-                    st.warning(
-                        result.data.warnings[0]
-                        if result.data.warnings
-                        else "Không tìm thấy giao dịch"
-                    )
-            else:
-                st.error(result.message)
+        with col4:
+            if st.button("🔄 Làm mới"):
+                st.session_state.wallet_page = 1
+                st.session_state.wallet_transactions = []
+                st.session_state.wallet_last_search = {}
+                st.rerun()
 
 
 def render_exchange_import():

@@ -17,29 +17,15 @@ class TransactionStorage:
         self.storage_type = storage_type or config.STORAGE_TYPE
         self.db_path = config.DATABASE_PATH
         self.csv_path = config.CSV_PATH
+        self._init_table()
 
-    def save_transactions(self, transactions: List[Transaction]):
-        """Save transactions to storage"""
-        if self.storage_type == "sqlite":
-            self._save_to_sqlite(transactions)
-        else:
-            self._save_to_csv(transactions)
-
-    def load_transactions(self) -> List[Transaction]:
-        """Load transactions from storage"""
-        if self.storage_type == "sqlite":
-            return self._load_from_sqlite()
-        else:
-            return self._load_from_csv()
-
-    def _save_to_sqlite(self, transactions: List[Transaction]):
-        """Save to SQLite database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-
-        # Create table if not exists
-        cursor.execute(
-            """
+    def _init_table(self):
+        """Initialize price cache table"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT,
@@ -61,11 +47,31 @@ class TransactionStorage:
                 amount_out REAL,
                 value_out_vnd REAL
             )
-        """
-        )
+         """
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Error initializing price cache: {e}")
 
-        # Clear existing data (for MVP, we'll replace all)
-        cursor.execute("DELETE FROM transactions")
+    def save_transactions(self, transactions: List[Transaction]):
+        """Save transactions to storage"""
+        if self.storage_type == "sqlite":
+            self._save_to_sqlite(transactions)
+        else:
+            self._save_to_csv(transactions)
+
+    def load_transactions(self) -> List[Transaction]:
+        """Load transactions from storage"""
+        if self.storage_type == "sqlite":
+            return self._load_from_sqlite()
+        else:
+            return self._load_from_csv()
+
+    def _save_to_sqlite(self, transactions: List[Transaction]):
+        """Save to SQLite database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
 
         # Insert transactions
         for tx in transactions:
