@@ -654,28 +654,51 @@ def render_tax_report():
         )
         st.dataframe(period_df, use_container_width=True)
 
-    # Generate PDF
+    # Generate Reports
     st.markdown("---")
-    st.subheader("Xuất báo cáo PDF")
+    st.subheader("Xuất báo cáo")
 
-    if st.button("📥 Tạo và tải báo cáo PDF", type="primary"):
-        with st.spinner("Đang tạo PDF..."):
-            result = api.tax.generate_pdf_report(
-                output_path="tax_report.pdf",
-                personal_info=st.session_state.get("personal_info", {}),
-            )
+    col1, col2 = st.columns(2)
 
-            if result.success:
-                with open(result.data, "rb") as pdf_file:
-                    st.download_button(
-                        label="⬇️ Tải PDF",
-                        data=pdf_file,
-                        file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf",
-                    )
-                st.success("✅ Đã tạo báo cáo PDF!")
-            else:
-                st.error(result.message)
+    with col1:
+        if st.button("📥 Tạo và tải báo cáo PDF", type="primary"):
+            with st.spinner("Đang tạo PDF..."):
+                result = api.tax.generate_pdf_report(
+                    output_path="tax_report.pdf",
+                    personal_info=st.session_state.get("personal_info", {}),
+                )
+
+                if result.success:
+                    with open(result.data, "rb") as pdf_file:
+                        st.download_button(
+                            label="⬇️ Tải PDF",
+                            data=pdf_file,
+                            file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                            mime="application/pdf",
+                        )
+                    st.success("✅ Đã tạo báo cáo PDF!")
+                else:
+                    st.error(result.message)
+
+    with col2:
+        if st.button("📊 Tạo và tải báo cáo Excel", type="primary"):
+            with st.spinner("Đang tạo Excel..."):
+                result = api.tax.generate_excel_report(
+                    output_path="tax_report.xlsx",
+                    personal_info=st.session_state.get("personal_info", {}),
+                )
+
+                if result.success:
+                    with open(result.data, "rb") as excel_file:
+                        st.download_button(
+                            label="⬇️ Tải Excel",
+                            data=excel_file,
+                            file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                    st.success("✅ Đã tạo báo cáo Excel!")
+                else:
+                    st.error(result.message)
 
 
 def render_analytics():
