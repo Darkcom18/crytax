@@ -5,6 +5,13 @@ Manages all service instances and their dependencies
 
 from typing import Optional
 from dataclasses import dataclass, field
+from api.transactions import TransactionAPI
+from api.tax import TaxAPI
+from api.exchange_rate import ExchangeRateAPI
+from api.data_import import DataImportAPI
+from utils.price_service import get_price_service
+from utils.storage import get_storage
+from services.tax_calculator import TaxCalculator
 
 
 @dataclass
@@ -13,6 +20,7 @@ class Container:
     Central container for all services and APIs.
     Provides dependency injection and lazy loading.
     """
+
     _transaction_api: Optional["TransactionAPI"] = field(default=None, repr=False)
     _tax_api: Optional["TaxAPI"] = field(default=None, repr=False)
     _exchange_rate_api: Optional["ExchangeRateAPI"] = field(default=None, repr=False)
@@ -27,7 +35,7 @@ class Container:
     def transactions(self) -> "TransactionAPI":
         """Get TransactionAPI instance"""
         if self._transaction_api is None:
-            from api.transactions import TransactionAPI
+
             self._transaction_api = TransactionAPI(self)
         return self._transaction_api
 
@@ -35,7 +43,6 @@ class Container:
     def tax(self) -> "TaxAPI":
         """Get TaxAPI instance"""
         if self._tax_api is None:
-            from api.tax import TaxAPI
             self._tax_api = TaxAPI(self)
         return self._tax_api
 
@@ -43,7 +50,7 @@ class Container:
     def exchange_rate(self) -> "ExchangeRateAPI":
         """Get ExchangeRateAPI instance"""
         if self._exchange_rate_api is None:
-            from api.exchange_rate import ExchangeRateAPI
+
             self._exchange_rate_api = ExchangeRateAPI(self)
         return self._exchange_rate_api
 
@@ -51,7 +58,6 @@ class Container:
     def data_import(self) -> "DataImportAPI":
         """Get DataImportAPI instance"""
         if self._data_import_api is None:
-            from api.data_import import DataImportAPI
             self._data_import_api = DataImportAPI(self)
         return self._data_import_api
 
@@ -60,7 +66,6 @@ class Container:
     def price_service(self):
         """Get PriceService instance"""
         if self._price_service is None:
-            from utils.price_service import get_price_service
             self._price_service = get_price_service()
         return self._price_service
 
@@ -68,7 +73,6 @@ class Container:
     def storage(self):
         """Get Storage instance"""
         if self._storage is None:
-            from utils.storage import get_storage
             self._storage = get_storage()
         return self._storage
 
@@ -76,7 +80,6 @@ class Container:
     def tax_calculator(self):
         """Get TaxCalculator instance"""
         if self._tax_calculator is None:
-            from services.tax_calculator import TaxCalculator
             self._tax_calculator = TaxCalculator()
         return self._tax_calculator
 

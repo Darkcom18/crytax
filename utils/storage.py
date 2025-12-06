@@ -3,7 +3,6 @@ Storage utilities for saving and loading transactions
 """
 
 import sqlite3
-import json
 import pandas as pd
 from typing import List, Optional
 from datetime import datetime
@@ -13,33 +12,20 @@ import config
 
 class TransactionStorage:
     """Storage for transactions"""
-    
+
     def __init__(self, storage_type: str = None):
         self.storage_type = storage_type or config.STORAGE_TYPE
         self.db_path = config.DATABASE_PATH
         self.csv_path = config.CSV_PATH
-    
-    def save_transactions(self, transactions: List[Transaction]):
-        """Save transactions to storage"""
-        if self.storage_type == "sqlite":
-            self._save_to_sqlite(transactions)
-        else:
-            self._save_to_csv(transactions)
-    
-    def load_transactions(self) -> List[Transaction]:
-        """Load transactions from storage"""
-        if self.storage_type == "sqlite":
-            return self._load_from_sqlite()
-        else:
-            return self._load_from_csv()
-    
-    def _save_to_sqlite(self, transactions: List[Transaction]):
-        """Save to SQLite database"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        # Create table if not exists
-        cursor.execute("""
+        self._init_table()
+
+    def _init_table(self):
+        """Initialize price cache table"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 date TEXT,
@@ -61,53 +47,77 @@ class TransactionStorage:
                 amount_out REAL,
                 value_out_vnd REAL
             )
-        """)
-        
-        # Clear existing data (for MVP, we'll replace all)
-        cursor.execute("DELETE FROM transactions")
-        
+         """
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"Error initializing price cache: {e}")
+
+    def save_transactions(self, transactions: List[Transaction]):
+        """Save transactions to storage"""
+        if self.storage_type == "sqlite":
+            self._save_to_sqlite(transactions)
+        else:
+            self._save_to_csv(transactions)
+
+    def load_transactions(self) -> List[Transaction]:
+        """Load transactions from storage"""
+        if self.storage_type == "sqlite":
+            return self._load_from_sqlite()
+        else:
+            return self._load_from_csv()
+
+    def _save_to_sqlite(self, transactions: List[Transaction]):
+        """Save to SQLite database"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
         # Insert transactions
         for tx in transactions:
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT INTO transactions (
                     date, type, token, amount, price_vnd, value_vnd,
                     source, chain, wallet_address, exchange_name,
                     tx_hash, fee_vnd, cost_basis, profit_loss, tax_amount,
                     token_out, amount_out, value_out_vnd
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                tx.date.isoformat(),
-                tx.type.value,
-                tx.token,
-                tx.amount,
-                tx.price_vnd,
-                tx.value_vnd,
-                tx.source.value,
-                tx.chain,
-                tx.wallet_address,
-                tx.exchange_name,
-                tx.tx_hash,
-                tx.fee_vnd,
-                tx.cost_basis,
-                tx.profit_loss,
-                tx.tax_amount,
-                tx.token_out,
-                tx.amount_out,
-                tx.value_out_vnd,
-            ))
-        
+            """,
+                (
+                    tx.date.isoformat(),
+                    tx.type.value,
+                    tx.token,
+                    tx.amount,
+                    tx.price_vnd,
+                    tx.value_vnd,
+                    tx.source.value,
+                    tx.chain,
+                    tx.wallet_address,
+                    tx.exchange_name,
+                    tx.tx_hash,
+                    tx.fee_vnd,
+                    tx.cost_basis,
+                    tx.profit_loss,
+                    tx.tax_amount,
+                    tx.token_out,
+                    tx.amount_out,
+                    tx.value_out_vnd,
+                ),
+            )
+
         conn.commit()
         conn.close()
-    
+
     def _load_from_sqlite(self) -> List[Transaction]:
         """Load from SQLite database"""
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            
+
             cursor.execute("SELECT * FROM transactions")
             rows = cursor.fetchall()
-            
+
             transactions = []
             for row in rows:
                 tx_dict = {
@@ -131,21 +141,21 @@ class TransactionStorage:
                     "value_out_vnd": row[18] if len(row) > 18 else None,
                 }
                 transactions.append(Transaction.from_dict(tx_dict))
-            
+
             conn.close()
             return transactions
         except Exception as e:
             print(f"Error loading from SQLite: {e}")
             return []
-    
+
     def _save_to_csv(self, transactions: List[Transaction]):
         """Save to CSV file"""
         if not transactions:
             return
-        
+
         df = pd.DataFrame([tx.to_dict() for tx in transactions])
         df.to_csv(self.csv_path, index=False)
-    
+
     def _load_from_csv(self) -> List[Transaction]:
         """Load from CSV file"""
         try:
@@ -172,6 +182,7 @@ class TransactionStorage:
         else:
             try:
                 import os
+
                 if os.path.exists(self.csv_path):
                     os.remove(self.csv_path)
             except Exception as e:
@@ -192,6 +203,7 @@ class TransactionStorage:
         else:
             try:
                 import os
+
                 return os.path.exists(self.csv_path)
             except Exception:
                 return False
@@ -221,7 +233,8 @@ class PriceCache:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS price_cache (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     token TEXT NOT NULL,
@@ -231,7 +244,8 @@ class PriceCache:
                     cached_at TEXT,
                     UNIQUE(token, date)
                 )
-            """)
+            """
+            )
             conn.commit()
             conn.close()
         except Exception as e:
@@ -253,7 +267,7 @@ class PriceCache:
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT price_usd, price_vnd FROM price_cache WHERE token = ? AND date = ?",
-                (token.upper(), date_str)
+                (token.upper(), date_str),
             )
             row = cursor.fetchone()
             conn.close()
@@ -278,10 +292,19 @@ class PriceCache:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR REPLACE INTO price_cache (token, date, price_usd, price_vnd, cached_at)
                 VALUES (?, ?, ?, ?, ?)
-            """, (token.upper(), date_str, price_usd, price_vnd, datetime.now().isoformat()))
+            """,
+                (
+                    token.upper(),
+                    date_str,
+                    price_usd,
+                    price_vnd,
+                    datetime.now().isoformat(),
+                ),
+            )
             conn.commit()
             conn.close()
         except Exception as e:
@@ -309,4 +332,3 @@ def get_price_cache() -> PriceCache:
     if _price_cache is None:
         _price_cache = PriceCache()
     return _price_cache
-

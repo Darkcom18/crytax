@@ -14,6 +14,7 @@ from models.transaction import Transaction, TransactionType, TransactionSource
 @dataclass
 class TransactionFilter:
     """Filter criteria for transactions"""
+
     source: Optional[TransactionSource] = None
     token: Optional[str] = None
     tx_type: Optional[TransactionType] = None
@@ -24,6 +25,7 @@ class TransactionFilter:
 @dataclass
 class TransactionStats:
     """Transaction statistics"""
+
     total_count: int
     by_source: Dict[str, int]
     by_token: Dict[str, int]
@@ -89,7 +91,9 @@ class TransactionAPI(BaseAPI):
         """Add multiple transactions"""
         self._ensure_loaded()
         self._transactions.extend(transactions)
-        return APIResponse.ok(len(transactions), f"Added {len(transactions)} transactions")
+        return APIResponse.ok(
+            len(transactions), f"Added {len(transactions)} transactions"
+        )
 
     def clear_all(self) -> APIResponse[None]:
         """Clear all transactions"""
@@ -103,7 +107,6 @@ class TransactionAPI(BaseAPI):
         return len(self._transactions)
 
     # Persistence
-
     def save(self) -> APIResponse[None]:
         """Save transactions to storage"""
         try:
@@ -152,7 +155,7 @@ class TransactionAPI(BaseAPI):
             by_source=by_source,
             by_token=by_token,
             by_type=by_type,
-            total_value_vnd=total_value
+            total_value_vnd=total_value,
         )
 
         return APIResponse.ok(stats)

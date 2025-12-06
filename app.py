@@ -8,10 +8,11 @@ import pandas as pd
 from datetime import datetime, date
 import json
 
-# API Layer
+
 from api import get_container
 
-# Formatters
+
+import config
 from utils.formatters import format_vnd
 
 # Page configuration
@@ -19,7 +20,7 @@ st.set_page_config(
     page_title="Crypto Tax MVP - Vietnam",
     page_icon="💰",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # Get API container
@@ -56,7 +57,13 @@ def render_sidebar():
     # Navigation
     page = st.sidebar.radio(
         "Chọn trang:",
-        ["🏠 Trang chủ", "📥 Nhập dữ liệu", "📊 Giao dịch", "📄 Báo cáo thuế", "📈 Phân tích"]
+        [
+            "🏠 Trang chủ",
+            "📥 Nhập dữ liệu",
+            "📊 Giao dịch",
+            "📄 Báo cáo thuế",
+            "📈 Phân tích",
+        ],
     )
     st.session_state.current_page = page
 
@@ -74,7 +81,7 @@ def render_sidebar():
             max_value=30000.0,
             value=rate_info.data.current_rate,
             step=100.0,
-            format="%.0f"
+            format="%.0f",
         )
 
         col1, col2 = st.sidebar.columns(2)
@@ -130,16 +137,26 @@ def render_home():
     with st.expander("📝 Thông tin cá nhân", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
-            name = st.text_input("Họ và tên", value=st.session_state.personal_info.get("name", ""))
-            id_number = st.text_input("CMND/CCCD", value=st.session_state.personal_info.get("id_number", ""))
+            name = st.text_input(
+                "Họ và tên", value=st.session_state.personal_info.get("name", "")
+            )
+            id_number = st.text_input(
+                "CMND/CCCD", value=st.session_state.personal_info.get("id_number", "")
+            )
         with col2:
-            address = st.text_area("Địa chỉ", value=st.session_state.personal_info.get("address", ""))
-            phone = st.text_input("Số điện thoại", value=st.session_state.personal_info.get("phone", ""))
+            address = st.text_area(
+                "Địa chỉ", value=st.session_state.personal_info.get("address", "")
+            )
+            phone = st.text_input(
+                "Số điện thoại", value=st.session_state.personal_info.get("phone", "")
+            )
 
         if st.button("Lưu thông tin"):
             st.session_state.personal_info = {
-                "name": name, "id_number": id_number,
-                "address": address, "phone": phone
+                "name": name,
+                "id_number": id_number,
+                "address": address,
+                "phone": phone,
             }
             st.success("Đã lưu thông tin cá nhân!")
 
@@ -175,7 +192,11 @@ def render_home():
         with col2:
             st.write("**Giao dịch theo token:**")
             if stats.by_token:
-                top_tokens = dict(sorted(stats.by_token.items(), key=lambda x: x[1], reverse=True)[:10])
+                top_tokens = dict(
+                    sorted(stats.by_token.items(), key=lambda x: x[1], reverse=True)[
+                        :10
+                    ]
+                )
                 st.bar_chart(pd.Series(top_tokens))
     else:
         st.info("👆 Vui lòng nhập dữ liệu giao dịch từ trang 'Nhập dữ liệu'")
@@ -201,43 +222,184 @@ def render_wallet_import():
     """Render wallet import section"""
     st.subheader("Kết nối ví")
 
+    # Initialize session state for pagination
+    if "wallet_page" not in st.session_state:
+        st.session_state.wallet_page = 1
+    if "wallet_transactions" not in st.session_state:
+        st.session_state.wallet_transactions = []
+    if "wallet_last_search" not in st.session_state:
+        st.session_state.wallet_last_search = {}
+
     col1, col2 = st.columns(2)
     with col1:
-        chains = api.data_import.get_supported_chains()
-        chain = st.selectbox("Chọn blockchain:", chains)
+        # Get supported chains and create mapping for selectbox
+        chains_data = api.data_import.get_supported_chains()
+        chain_names = [c["name"] for c in chains_data]
+        chain_key_map = {c["name"]: c["key"] for c in chains_data}
+
+        selected_chain_name = st.selectbox("Chọn blockchain:", chain_names)
         wallet_address = st.text_input("Địa chỉ ví:", placeholder="0x...")
 
     with col2:
         wallet_api_key = st.text_input(
             "API Key (tùy chọn):",
             type="password",
-            help="API key từ Etherscan, BSCScan, etc."
+            help="API key từ Etherscan (dùng chung cho tất cả chains với V2 API)",
         )
         date_range = st.date_input(
-            "Khoảng thời gian:",
-            value=(date(2024, 1, 1), date.today())
+            "Khoảng thời gian:", value=(date(2024, 1, 1), date.today())
         )
 
-    if st.button("🔍 Lấy giao dịch từ ví", type="primary"):
-        start_date = datetime.combine(date_range[0], datetime.min.time()) if len(date_range) > 0 else None
-        end_date = datetime.combine(date_range[1], datetime.max.time()) if len(date_range) > 1 else None
+    # Get chain key from selected name
+    chain_key = chain_key_map.get(selected_chain_name, "")
 
+    start_date = (
+        datetime.combine(date_range[0], datetime.min.time())
+        if len(date_range) > 0
+        else None
+    )
+    end_date = (
+        datetime.combine(date_range[1], datetime.max.time())
+        if len(date_range) > 1
+        else None
+    )
+
+    # Function to fetch transactions for a specific page
+    def fetch_wallet_transactions(page: int):
         with st.spinner("Đang lấy giao dịch..."):
             result = api.data_import.import_from_wallet(
                 wallet_address,
-                chain,
+                chain_key,
                 wallet_api_key if wallet_api_key else None,
                 start_date,
-                end_date
+                end_date,
+                page=page,
+                offset=config.DEFAULT_LIMIT_REQUEST_TRANSACTION,
+            )
+            return result
+
+    # Search button
+    if st.button("🔍 Lấy giao dịch từ ví", type="primary"):
+        st.session_state.wallet_page = 1  # Reset to page 1
+        st.session_state.wallet_last_search = {
+            "wallet_address": wallet_address,
+            "chain_key": chain_key,
+            "api_key": wallet_api_key,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+        result = fetch_wallet_transactions(1)
+
+        if result.success:
+            if result.data.count > 0:
+                st.success(result.message)
+                st.session_state.wallet_transactions = result.data.transactions
+            else:
+                st.warning(
+                    result.data.warnings[0]
+                    if result.data.warnings
+                    else "Không tìm thấy giao dịch"
+                )
+                st.session_state.wallet_transactions = []
+        else:
+            st.error(result.message)
+            st.session_state.wallet_transactions = []
+
+    # Display transactions if available
+    if st.session_state.wallet_transactions:
+        st.markdown("---")
+        st.subheader(f"📋 Kết quả giao dịch (Trang {st.session_state.wallet_page})")
+
+        # Create DataFrame for display
+        df = pd.DataFrame([tx.to_dict() for tx in st.session_state.wallet_transactions])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date", ascending=False)
+
+        display_df = df[
+            [
+                "date",
+                "type",
+                "token",
+                "amount",
+                "value_vnd",
+                "source",
+                "chain",
+                "tx_hash",
+            ]
+        ].copy()
+        display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y %H:%M")
+        display_df["value_vnd"] = display_df["value_vnd"].apply(lambda x: format_vnd(x))
+        display_df["amount"] = display_df["amount"].apply(lambda x: f"{x:,.6f}")
+
+        display_df.columns = [
+            "Ngày",
+            "Loại",
+            "Token",
+            "Số lượng",
+            "Giá trị (VND)",
+            "Nguồn",
+            "Chain",
+            "TX Hash",
+        ]
+
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+        # Pagination controls
+        st.markdown("---")
+        col1, col2, col3, col4 = st.columns([1, 1, 2, 1])
+
+        with col1:
+            if st.button("Trang trước", disabled=st.session_state.wallet_page <= 1):
+                st.session_state.wallet_page -= 1
+                search = st.session_state.wallet_last_search
+                result = api.data_import.import_from_wallet(
+                    search["wallet_address"],
+                    search["chain_key"],
+                    search["api_key"] if search["api_key"] else None,
+                    search["start_date"],
+                    search["end_date"],
+                    page=st.session_state.wallet_page,
+                    offset=config.DEFAULT_PAGE_REQUEST_TRANSACTION,
+                )
+                if result.success and result.data.count > 0:
+                    st.session_state.wallet_transactions = result.data.transactions
+                st.rerun()
+
+        with col2:
+            if st.button(
+                "Trang sau",
+                disabled=len(st.session_state.wallet_transactions)
+                < config.DEFAULT_LIMIT_REQUEST_TRANSACTION,
+            ):
+                st.session_state.wallet_page += 1
+                search = st.session_state.wallet_last_search
+                result = api.data_import.import_from_wallet(
+                    search["wallet_address"],
+                    search["chain_key"],
+                    search["api_key"] if search["api_key"] else None,
+                    search["start_date"],
+                    search["end_date"],
+                    page=st.session_state.wallet_page,
+                    offset=config.DEFAULT_PAGE_REQUEST_TRANSACTION,
+                )
+                if result.success and result.data.count > 0:
+                    st.session_state.wallet_transactions = result.data.transactions
+                else:
+                    st.session_state.wallet_page -= 1  # Revert if no more data
+                    st.warning("Không còn giao dịch nào")
+                st.rerun()
+
+        with col3:
+            st.write(
+                f"**Trang: {st.session_state.wallet_page}** | Hiển thị: {len(st.session_state.wallet_transactions)} giao dịch"
             )
 
-            if result.success:
-                if result.data.count > 0:
-                    st.success(result.message)
-                else:
-                    st.warning(result.data.warnings[0] if result.data.warnings else "Không tìm thấy giao dịch")
-            else:
-                st.error(result.message)
+        with col4:
+            if st.button("🔄 Làm mới"):
+                st.session_state.wallet_page = 1
+                st.session_state.wallet_transactions = []
+                st.session_state.wallet_last_search = {}
+                st.rerun()
 
 
 def render_exchange_import():
@@ -249,12 +411,14 @@ def render_exchange_import():
 
     if exchange == "Binance":
         with st.expander("📖 Hướng dẫn lấy Binance API Key", expanded=False):
-            st.markdown("""
+            st.markdown(
+                """
             **Các bước lấy API Key từ Binance:**
             1. Đăng nhập Binance → API Management
             2. Tạo API mới với quyền **Read Only**
             3. Copy API Key và Secret Key
-            """)
+            """
+            )
 
         col1, col2 = st.columns(2)
         with col1:
@@ -265,29 +429,58 @@ def render_exchange_import():
         if binance_api_key and binance_api_secret:
             if st.button("🔌 Test kết nối"):
                 with st.spinner("Đang kiểm tra..."):
-                    result = api.data_import.test_binance_connection(binance_api_key, binance_api_secret)
+                    result = api.data_import.test_binance_connection(
+                        binance_api_key, binance_api_secret
+                    )
                     if result.success:
                         st.success(result.message)
+
+                        info = result.data or {}
+
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Loại tài khoản", info.get("account_type", "N/A"))
+                        with col2:
+                            st.metric(
+                                "Có thể giao dịch",
+                                "Có" if info.get("can_trade") else "Không",
+                            )
+                        with col3:
+                            st.metric(
+                                "Có thể rút",
+                                "Có" if info.get("can_withdraw") else "Không",
+                            )
+
+                        with st.expander("Chi tiết kết nối (debug)"):
+                            st.write(
+                                f"Server time (UTC): {info.get('server_time_utc', '')}"
+                            )
+                            st.write(
+                                f"Local time (UTC): {info.get('local_time_utc', '')}"
+                            )
+                            st.write(
+                                f"Timestamp offset (ms): {info.get('timestamp_offset_ms', '')}"
+                            )
+                            st.json(info)
                     else:
                         st.error(result.message)
 
         exchange_date_range = st.date_input(
             "Khoảng thời gian:",
             value=(date(2024, 1, 1), date.today()),
-            key="exchange_date_range"
+            key="exchange_date_range",
         )
 
         if st.button("🔍 Lấy giao dịch từ Binance", type="primary"):
             if binance_api_key and binance_api_secret:
-                start_date = datetime.combine(exchange_date_range[0], datetime.min.time())
+                start_date = datetime.combine(
+                    exchange_date_range[0], datetime.min.time()
+                )
                 end_date = datetime.combine(exchange_date_range[1], datetime.max.time())
 
                 with st.spinner("Đang lấy giao dịch từ Binance..."):
                     result = api.data_import.import_from_binance(
-                        binance_api_key,
-                        binance_api_secret,
-                        start_date,
-                        end_date
+                        binance_api_key, binance_api_secret, start_date, end_date
                     )
 
                     if result.success:
@@ -311,14 +504,11 @@ def render_file_import():
         st.markdown("**Định dạng JSON:**")
         st.code(api.data_import.get_sample_json_format(), language="json")
 
-    uploaded_file = st.file_uploader(
-        "Chọn file giao dịch:",
-        type=["csv", "json"]
-    )
+    uploaded_file = st.file_uploader("Chọn file giao dịch:", type=["csv", "json"])
 
     if uploaded_file:
         try:
-            if uploaded_file.name.endswith('.csv'):
+            if uploaded_file.name.endswith(".csv"):
                 df = pd.read_csv(uploaded_file)
                 st.write(f"**Preview ({len(df)} dòng):**")
                 st.dataframe(df.head(10), use_container_width=True)
@@ -326,13 +516,19 @@ def render_file_import():
 
                 if st.button("📥 Import từ CSV", type="primary"):
                     with st.spinner("Đang xử lý..."):
-                        result = api.data_import.import_from_csv(uploaded_file, uploaded_file.name)
+                        result = api.data_import.import_from_csv(
+                            uploaded_file, uploaded_file.name
+                        )
                         if result.success and result.data.count > 0:
                             st.success(result.message)
                         else:
-                            st.warning(result.data.warnings[0] if result.data.warnings else "Không tìm thấy giao dịch")
+                            st.warning(
+                                result.data.warnings[0]
+                                if result.data.warnings
+                                else "Không tìm thấy giao dịch"
+                            )
 
-            elif uploaded_file.name.endswith('.json'):
+            elif uploaded_file.name.endswith(".json"):
                 data = json.load(uploaded_file)
                 st.write("**Preview:**")
                 st.json(data[:5] if isinstance(data, list) else data)
@@ -344,7 +540,11 @@ def render_file_import():
                         if result.success and result.data.count > 0:
                             st.success(result.message)
                         else:
-                            st.warning(result.data.warnings[0] if result.data.warnings else "Không tìm thấy giao dịch")
+                            st.warning(
+                                result.data.warnings[0]
+                                if result.data.warnings
+                                else "Không tìm thấy giao dịch"
+                            )
 
         except Exception as e:
             st.error(f"Lỗi đọc file: {e}")
@@ -364,7 +564,9 @@ def render_transactions():
     # Filters
     col1, col2, col3 = st.columns(3)
     with col1:
-        filter_source = st.selectbox("Lọc theo nguồn:", ["Tất cả", "Wallet", "Exchange"])
+        filter_source = st.selectbox(
+            "Lọc theo nguồn:", ["Tất cả", "Wallet", "Exchange"]
+        )
     with col2:
         tokens = ["Tất cả"] + api.transactions.get_unique_tokens()
         filter_token = st.selectbox("Lọc theo token:", tokens)
@@ -378,7 +580,11 @@ def render_transactions():
 
     tx_filter = TransactionFilter()
     if filter_source != "Tất cả":
-        tx_filter.source = TransactionSource.WALLET if filter_source == "Wallet" else TransactionSource.EXCHANGE
+        tx_filter.source = (
+            TransactionSource.WALLET
+            if filter_source == "Wallet"
+            else TransactionSource.EXCHANGE
+        )
     if filter_token != "Tất cả":
         tx_filter.token = filter_token
     if filter_type != "Tất cả":
@@ -390,10 +596,20 @@ def render_transactions():
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date", ascending=False)
 
-        display_df = df[["date", "type", "token", "amount", "value_vnd", "source", "chain"]].copy()
+        display_df = df[
+            ["date", "type", "token", "amount", "value_vnd", "source", "chain"]
+        ].copy()
         display_df["date"] = display_df["date"].dt.strftime("%d/%m/%Y %H:%M")
         display_df["value_vnd"] = display_df["value_vnd"].apply(lambda x: format_vnd(x))
-        display_df.columns = ["Ngày", "Loại", "Token", "Số lượng", "Giá trị (VND)", "Nguồn", "Chain"]
+        display_df.columns = [
+            "Ngày",
+            "Loại",
+            "Token",
+            "Số lượng",
+            "Giá trị (VND)",
+            "Nguồn",
+            "Chain",
+        ]
 
         st.dataframe(display_df, use_container_width=True, height=400)
         st.write(f"Tổng cộng: {len(filtered_result.data)} giao dịch")
@@ -419,7 +635,9 @@ def render_tax_report():
             st.metric("Tổng thuế phải nộp", format_vnd(tax.total_tax))
             st.metric("Thuế chuyển nhượng (0.1%)", format_vnd(tax.total_transfer_tax))
         with col2:
-            st.metric("Thuế thu nhập khác (10%)", format_vnd(tax.total_other_income_tax))
+            st.metric(
+                "Thuế thu nhập khác (10%)", format_vnd(tax.total_other_income_tax)
+            )
             st.metric("Tổng lãi/lỗ", format_vnd(tax.total_profit_loss))
 
     st.markdown("---")
@@ -428,34 +646,59 @@ def render_tax_report():
     st.subheader("Thuế theo từng tháng")
     period_result = api.tax.calculate_by_period(period="month")
     if period_result.success and period_result.data:
-        period_df = pd.DataFrame([
-            {"Tháng": p.period, "Thuế": p.tax_amount, "Lãi/Lỗ": p.profit_loss}
-            for p in period_result.data
-        ])
+        period_df = pd.DataFrame(
+            [
+                {"Tháng": p.period, "Thuế": p.tax_amount, "Lãi/Lỗ": p.profit_loss}
+                for p in period_result.data
+            ]
+        )
         st.dataframe(period_df, use_container_width=True)
 
-    # Generate PDF
+    # Generate Reports
     st.markdown("---")
-    st.subheader("Xuất báo cáo PDF")
+    st.subheader("Xuất báo cáo")
 
-    if st.button("📥 Tạo và tải báo cáo PDF", type="primary"):
-        with st.spinner("Đang tạo PDF..."):
-            result = api.tax.generate_pdf_report(
-                output_path="tax_report.pdf",
-                personal_info=st.session_state.get("personal_info", {})
-            )
+    col1, col2 = st.columns(2)
 
-            if result.success:
-                with open(result.data, "rb") as pdf_file:
-                    st.download_button(
-                        label="⬇️ Tải PDF",
-                        data=pdf_file,
-                        file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.pdf",
-                        mime="application/pdf"
-                    )
-                st.success("✅ Đã tạo báo cáo PDF!")
-            else:
-                st.error(result.message)
+    with col1:
+        if st.button("📥 Tạo và tải báo cáo PDF", type="primary"):
+            with st.spinner("Đang tạo PDF..."):
+                result = api.tax.generate_pdf_report(
+                    output_path="tax_report.pdf",
+                    personal_info=st.session_state.get("personal_info", {}),
+                )
+
+                if result.success:
+                    with open(result.data, "rb") as pdf_file:
+                        st.download_button(
+                            label="⬇️ Tải PDF",
+                            data=pdf_file,
+                            file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.pdf",
+                            mime="application/pdf",
+                        )
+                    st.success("✅ Đã tạo báo cáo PDF!")
+                else:
+                    st.error(result.message)
+
+    with col2:
+        if st.button("📊 Tạo và tải báo cáo Excel", type="primary"):
+            with st.spinner("Đang tạo Excel..."):
+                result = api.tax.generate_excel_report(
+                    output_path="tax_report.xlsx",
+                    personal_info=st.session_state.get("personal_info", {}),
+                )
+
+                if result.success:
+                    with open(result.data, "rb") as excel_file:
+                        st.download_button(
+                            label="⬇️ Tải Excel",
+                            data=excel_file,
+                            file_name=f"tax_report_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                    st.success("✅ Đã tạo báo cáo Excel!")
+                else:
+                    st.error(result.message)
 
 
 def render_analytics():
